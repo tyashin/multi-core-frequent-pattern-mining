@@ -139,6 +139,23 @@ Reproduce: `python bench/bench_vs_mlxtend.py --all` and
 timings, not averaged; the accidents@0.1 row is the output-bound regime —
 runtime there is dominated by emitting 10.7M itemsets, not search.
 
+### Effect of the depth cap
+
+The headline comparisons above are **uncapped** (full itemset space) for
+oracle parity. The library's depth cap (`max_len = A + 1`, applied early — long
+itemsets are never generated) is the single largest speedup at low support.
+fpm on accidents@0.1:
+
+| max_len | itemsets | fpm time |
+|---|---:|---:|
+| uncapped | 10,691,549 | 27.1 s |
+| 5 (A=4) | 292,566 | 0.66 s |
+| 3 (A=2) | 12,858 | 0.085 s |
+
+mlxtend with the same cap (`max_len=5`, exact parity): 112.1 s — **171x**;
+the cap buys mlxtend only 3.4x because its FP-tree recursion still walks the
+full tree. Spark MLlib has no depth cap at all.
+
 ## Design
 
 See `design_docs/DESIGN_FPM.md`. The engine transposes the database into
