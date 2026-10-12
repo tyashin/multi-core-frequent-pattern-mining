@@ -17,6 +17,7 @@ find_package(OpenMP REQUIRED)
 
 add_library(fpm_core STATIC
   src/bitset.cpp
+  src/mine.cpp
 )
 target_include_directories(fpm_core PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/src)
 target_link_libraries(fpm_core PUBLIC OpenMP::OpenMP_CXX)
@@ -40,6 +41,7 @@ if(FPM_BUILD_TESTS)
   enable_testing()
   add_executable(fpm_tests
     tests/test_bitset.cpp
+    tests/test_mine.cpp
   )
   target_link_libraries(fpm_tests PRIVATE fpm_core GTest::gtest_main)
   target_compile_options(fpm_tests PRIVATE -Wall -Wextra -Werror)
