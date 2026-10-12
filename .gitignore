@@ -1,6 +1,7 @@
 build/
 build-*/
 .venv/
+bench/data/
 __pycache__/
 *.egg-info/
 dist/

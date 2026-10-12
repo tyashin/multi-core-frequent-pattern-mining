@@ -69,6 +69,28 @@ py::dict mine_py(const U64Array& offsets, const U64Array& keys, int64_t min_supp
   return out;
 }
 
+py::dict mine_itemsets_py(const U64Array& offsets, const U64Array& keys, int64_t min_support_abs,
+                          int max_len, int threads) {
+  if (offsets.ndim() != 1) throw std::invalid_argument("offsets must be 1-D");
+  if (keys.ndim() != 1) throw std::invalid_argument("keys must be 1-D");
+
+  fpm::FrequentItemsets fi;
+  {
+    py::gil_scoped_release release;
+    fpm::VerticalIndex idx = fpm::VerticalIndex::build(
+        offsets.data(), static_cast<size_t>(offsets.size()), keys.data(),
+        static_cast<size_t>(keys.size()), min_support_abs, threads);
+    fi = fpm::mine_itemsets(idx, max_len, threads);
+  }
+
+  py::dict out;
+  out["itemset_offsets"] = to_numpy(fi.offsets);
+  out["itemset_keys"] = to_numpy(fi.ids);
+  out["counts"] = to_numpy(fi.counts);
+  out["n_transactions"] = fi.n_transactions;
+  return out;
+}
+
 }  // namespace
 
 PYBIND11_MODULE(fpm, m) {
@@ -89,6 +111,10 @@ PYBIND11_MODULE(fpm, m) {
         "min_confidence: global generation-time floor\n"
         "threads: 0 = auto-detect\n"
         "k_witnesses: witness transactions per rule (0 = skip)");
+  m.def("mine_itemsets", &mine_itemsets_py, py::arg("offsets"), py::arg("keys"),
+        py::arg("min_support_abs"), py::arg("max_len"), py::arg("threads") = 0,
+        "Mine frequent itemsets from a CSR transaction database.\n\n"
+        "Returns a dict with itemset_offsets/itemset_keys (CSR) and counts.");
   m.def("detect_isa", [] { return fpm::isa_name(fpm::detect_isa()); },
         "Best ISA the CPU supports (scalar/avx2/avx512).");
   m.def("isa_in_use", [] { return fpm::isa_name(fpm::current_isa()); },
