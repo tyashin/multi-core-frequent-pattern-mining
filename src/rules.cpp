@@ -178,4 +178,13 @@ Rules generate_rules(const VerticalIndex& db, const FrequentItemsets& fi,
   return result;
 }
 
+Rules mine_rules(const uint64_t* offsets, size_t offsets_len, const uint64_t* keys,
+                 size_t keys_len, int64_t min_support_abs, int max_len,
+                 const RuleParams& params) {
+  VerticalIndex idx =
+      VerticalIndex::build(offsets, offsets_len, keys, keys_len, min_support_abs, params.threads);
+  FrequentItemsets fi = mine_itemsets(idx, max_len, params.threads);
+  return generate_rules(idx, fi, params);
+}
+
 }  // namespace fpm

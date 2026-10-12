@@ -53,4 +53,11 @@ struct Rules {
 Rules generate_rules(const VerticalIndex& db, const FrequentItemsets& fi,
                      const RuleParams& params);
 
+// Full pipeline: build index, mine itemsets, expand rules. One call in,
+// one call out. max_len is the itemset depth cap (e.g. A + 1);
+// params.max_antecedents is the rule-side cap A.
+Rules mine_rules(const uint64_t* offsets, size_t offsets_len, const uint64_t* keys,
+                 size_t keys_len, int64_t min_support_abs, int max_len,
+                 const RuleParams& params);
+
 }  // namespace fpm

@@ -1,0 +1,19 @@
+[build-system]
+requires = ["scikit-build-core >=0.10", "pybind11 >=2.12"]
+build-backend = "scikit_build_core.build"
+
+[project]
+name = "fpm"
+version = "0.1.0"
+description = "Multi-core frequent-itemset and association-rule mining (vertical bitset engine)"
+requires-python = ">=3.9"
+dependencies = []
+
+[tool.scikit-build]
+minimum-version = "0.10"
+build-dir = "build-wheel"
+
+[tool.scikit-build.cmake.define]
+FPM_BUILD_PYTHON = "ON"
+FPM_BUILD_TESTS = "OFF"
+FPM_BUILD_SHARED = "OFF"
