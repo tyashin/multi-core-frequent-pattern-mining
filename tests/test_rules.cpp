@@ -356,4 +356,50 @@ TEST(Rules, NBasketsMatchesItemsetCounts) {
   }
 }
 
+// size_key = min(total_size, 5): itemsets longer than 5 must be governed by
+// the LAST threshold entry. Verified by targeted presence/absence of rules
+// whose confidence/support is known exactly, not via the shared helper.
+TEST(Rules, SizeKeyClampAtFive) {
+  // 850 tx with {1,2,3,4,5}; 150 tx with {1,2,3,4,6}. N = 1000.
+  // count({1,2,3,4}) = 1000; count({1,2,3,4,5}) = 850; count({1,2,3,4,6}) = 150.
+  std::vector<uint64_t> offsets{0}, keys;
+  for (int i = 0; i < 850; ++i) {
+    for (uint64_t it : {1, 2, 3, 4, 5}) keys.push_back(it);
+    offsets.push_back(keys.size());
+  }
+  for (int i = 0; i < 150; ++i) {
+    for (uint64_t it : {1, 2, 3, 4, 6}) keys.push_back(it);
+    offsets.push_back(keys.size());
+  }
+  Csr csr{offsets, keys};
+
+  auto has_rule = [](const fpm::Rules& r, std::set<uint64_t> ant, uint64_t cons) {
+    for (size_t i = 0; i < r.size(); ++i) {
+      std::set<uint64_t> got(r.ant_keys.begin() + r.ant_offsets[i],
+                             r.ant_keys.begin() + r.ant_offsets[i + 1]);
+      if (got == ant && r.consequent[i] == cons) return true;
+    }
+    return false;
+  };
+
+  fpm::RuleParams p;
+  p.max_antecedents = 6;
+  p.min_confidence = 0.0;
+  p.thr.conf = {0.0, 0.0, 0.0, 0.0, 0.9};  // size_key 5 (i.e. |Z| >= 5): floor 0.9
+
+  auto rules = run_rules(csr, 1, 7, p);
+  // {1,2,3,4} -> {5}: conf = 850/1000 = 0.85, |Z| = 5 -> idx 4 -> dropped.
+  EXPECT_FALSE(has_rule(rules, {1, 2, 3, 4}, 5));
+  // {1,2,3} -> {5}: conf = 850/1000 = 0.85, |Z| = 4 -> idx 3 = 0 -> kept.
+  EXPECT_TRUE(has_rule(rules, {1, 2, 3}, 5));
+
+  // Support clamp likewise: supp({1,2,3,4,5}) = 0.85; drop |Z| >= 5 via idx 4.
+  p.thr.conf = {};
+  p.thr.supp = {0.0, 0.0, 0.0, 0.0, 0.86};
+  rules = run_rules(csr, 1, 7, p);
+  EXPECT_FALSE(has_rule(rules, {1, 2, 3, 4}, 5));  // supp 0.85 < 0.86, |Z| = 5
+  EXPECT_TRUE(has_rule(rules, {1, 2, 3}, 5));      // |Z| = 4 -> unconstrained
+  EXPECT_FALSE(has_rule(rules, {1, 2, 3, 4}, 6));  // supp 0.15 < 0.86, |Z| = 5
+}
+
 }  // namespace

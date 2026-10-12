@@ -1,0 +1,35 @@
+name: ci
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  cpp:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure (Release)
+        run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
+
+      - name: Build + test (Release)
+        run: cmake --build build -j && ./build/fpm_tests
+
+      - name: Configure (ASan+UBSan)
+        run: cmake -S . -B build-san -DCMAKE_BUILD_TYPE=Debug -DFPM_SANITIZE="address,undefined"
+
+      - name: Build + test (ASan+UBSan)
+        run: cmake --build build-san -j && ./build-san/fpm_tests
+
+  python:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Build + install wheel
+        run: pip install . pytest numpy
+      - name: Integration tests
+        run: python -m pytest python/ -q
