@@ -164,3 +164,7 @@ DFS with threshold-gated OpenMP parallelism, terminal-level store-skip,
 non-temporal stores, and runtime ISA dispatch (scalar / AVX2 / AVX-512). The
 kernel is memory-bandwidth-bound: scaling flattens at ~8–15×, ~12 physical
 cores is the sweet spot.
+
+## License
+
+MIT — see `LICENSE`.
