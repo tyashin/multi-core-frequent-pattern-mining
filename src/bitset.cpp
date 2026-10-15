@@ -174,17 +174,30 @@ FPM_AVX2_TARGET uint64_t intersect_count_nt_avx2(const uint64_t* a, const uint64
 
 #define FPM_AVX512_TARGET __attribute__((target("avx512f,avx512vpopcntdq")))
 
+// Lane-sum for __m512i of uint64. _mm512_reduce_add_epi64 goes through
+// _mm512_extracti64x4_epi64, whose GCC 12 header implementation trips a
+// -Wuninitialized false positive on _mm256_undefined_si256 (fixed in GCC 13)
+// — fatal under -Werror. Store-and-sum avoids that header path; it runs once
+// per kernel pass, so the cost is negligible.
+FPM_AVX512_TARGET static inline uint64_t hsum512(__m512i v) {
+  uint64_t buf[8];
+  _mm512_storeu_si512(reinterpret_cast<void*>(buf), v);
+  uint64_t c = 0;
+  for (size_t i = 0; i < 8; ++i) c += buf[i];
+  return c;
+}
+
 FPM_AVX512_TARGET uint64_t popcount_avx512(const uint64_t* a, size_t words) noexcept {
   __m512i total = _mm512_setzero_si512();
   size_t i = 0;
   for (; i + 8 <= words; i += 8)
     total = _mm512_add_epi64(
         total, _mm512_popcnt_epi64(_mm512_loadu_si512(reinterpret_cast<const void*>(a + i))));
-  uint64_t c = static_cast<uint64_t>(_mm512_reduce_add_epi64(total));
+  uint64_t c = hsum512(total);
   if (i < words) {
     const __mmask8 m = static_cast<__mmask8>((1u << (words - i)) - 1u);
     const __m512i v = _mm512_maskz_loadu_epi64(m, reinterpret_cast<const void*>(a + i));
-    c += static_cast<uint64_t>(_mm512_reduce_add_epi64(_mm512_popcnt_epi64(v)));
+    c += hsum512(_mm512_popcnt_epi64(v));
   }
   return c;
 }
@@ -199,14 +212,14 @@ FPM_AVX512_TARGET uint64_t intersect_count_avx512(const uint64_t* a, const uint6
     _mm512_storeu_si512(reinterpret_cast<void*>(out + i), v);
     total = _mm512_add_epi64(total, _mm512_popcnt_epi64(v));
   }
-  uint64_t c = static_cast<uint64_t>(_mm512_reduce_add_epi64(total));
+  uint64_t c = hsum512(total);
   if (i < words) {
     const __mmask8 m = static_cast<__mmask8>((1u << (words - i)) - 1u);
     const __m512i v =
         _mm512_and_si512(_mm512_maskz_loadu_epi64(m, reinterpret_cast<const void*>(a + i)),
                          _mm512_maskz_loadu_epi64(m, reinterpret_cast<const void*>(b + i)));
     _mm512_mask_storeu_epi64(reinterpret_cast<void*>(out + i), m, v);
-    c += static_cast<uint64_t>(_mm512_reduce_add_epi64(_mm512_popcnt_epi64(v)));
+    c += hsum512(_mm512_popcnt_epi64(v));
   }
   return c;
 }
@@ -220,13 +233,13 @@ FPM_AVX512_TARGET uint64_t intersect_count_nostore_avx512(const uint64_t* a, con
                                        _mm512_loadu_si512(reinterpret_cast<const void*>(b + i)));
     total = _mm512_add_epi64(total, _mm512_popcnt_epi64(v));
   }
-  uint64_t c = static_cast<uint64_t>(_mm512_reduce_add_epi64(total));
+  uint64_t c = hsum512(total);
   if (i < words) {
     const __mmask8 m = static_cast<__mmask8>((1u << (words - i)) - 1u);
     const __m512i v =
         _mm512_and_si512(_mm512_maskz_loadu_epi64(m, reinterpret_cast<const void*>(a + i)),
                          _mm512_maskz_loadu_epi64(m, reinterpret_cast<const void*>(b + i)));
-    c += static_cast<uint64_t>(_mm512_reduce_add_epi64(_mm512_popcnt_epi64(v)));
+    c += hsum512(_mm512_popcnt_epi64(v));
   }
   return c;
 }
@@ -241,7 +254,7 @@ FPM_AVX512_TARGET uint64_t intersect_count_nt_avx512(const uint64_t* a, const ui
     _mm512_stream_si512(reinterpret_cast<__m512i*>(out + i), v);
     total = _mm512_add_epi64(total, _mm512_popcnt_epi64(v));
   }
-  uint64_t c = static_cast<uint64_t>(_mm512_reduce_add_epi64(total));
+  uint64_t c = hsum512(total);
   if (i < words) {
     const __mmask8 m = static_cast<__mmask8>((1u << (words - i)) - 1u);
     const __m512i v =
@@ -251,7 +264,7 @@ FPM_AVX512_TARGET uint64_t intersect_count_nt_avx512(const uint64_t* a, const ui
       const uint64_t w = a[j] & b[j];
       out[j] = w;
     }
-    c += static_cast<uint64_t>(_mm512_reduce_add_epi64(_mm512_popcnt_epi64(v)));
+    c += hsum512(_mm512_popcnt_epi64(v));
   }
   _mm_sfence();
   return c;
