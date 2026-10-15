@@ -33,8 +33,8 @@ typedef struct FpmRules {
   int k_witnesses;
 } FpmRules;
 
-/* Threshold arrays are indexed by size_key = min(total_size, 5) - 1;
- * pass a shorter array (or NULL with length 0) for missing keys = 0.0.
+/* Threshold arrays are indexed by size_key = total_size - 1; sizes beyond
+ * the array length are unconstrained (missing entries read as 0.0).
  * threads: 0 = auto-detect. Returns NULL on error (see fpm_last_error). */
 FpmRules* fpm_mine_rules(const uint64_t* offsets, uint64_t offsets_len, const uint64_t* keys,
                          uint64_t keys_len, int64_t min_support_abs, int max_len,

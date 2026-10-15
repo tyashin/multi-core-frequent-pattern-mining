@@ -18,9 +18,6 @@ using F64Array = py::array_t<double, py::array::c_style>;
 
 std::vector<double> thr_vec(const F64Array& a, const char* name) {
   if (a.ndim() != 1) throw std::invalid_argument(std::string(name) + " must be 1-D");
-  if (a.size() > fpm::Thresholds::kSizeKeyMax)
-    throw std::invalid_argument(std::string(name) + " must have at most " +
-                                std::to_string(fpm::Thresholds::kSizeKeyMax) + " entries");
   return std::vector<double>(a.data(), a.data() + a.size());
 }
 
@@ -107,7 +104,7 @@ PYBIND11_MODULE(fpm, m) {
         "max_len: itemset depth cap (e.g. max_antecedents + 1)\n"
         "max_antecedents: rule antecedent-size cap A\n"
         "supp_thr/conf_thr/lift_thr: per-length thresholds, index =\n"
-        "    min(total_size, 5) - 1; missing entries mean no constraint\n"
+        "    total_size - 1; entries beyond the array length mean no constraint\n"
         "min_confidence: global generation-time floor\n"
         "threads: 0 = auto-detect\n"
         "k_witnesses: witness transactions per rule (0 = skip)");

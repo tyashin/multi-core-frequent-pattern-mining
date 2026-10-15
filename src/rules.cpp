@@ -107,7 +107,7 @@ Rules generate_rules(const VerticalIndex& db, const FrequentItemsets& fi,
       if (static_cast<int>(zsize) - 1 > params.max_antecedents) continue;
 
       const uint64_t cnt_z = fi.counts[i];
-      const int size_key = std::min<int>(static_cast<int>(zsize), Thresholds::kSizeKeyMax);
+      const int size_key = static_cast<int>(zsize);
       const double supp = static_cast<double>(cnt_z) / static_cast<double>(n_tx);
       if (supp < params.thr.supp_at(size_key)) continue;
 

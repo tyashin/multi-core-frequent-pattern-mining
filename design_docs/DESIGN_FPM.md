@@ -136,7 +136,7 @@ Per-call parameters, applied to every rule:
 
 - global `min_confidence` floor (applied at generation, Spark-compatible semantics);
 - antecedent-size cap `A`;
-- optional **per-length thresholds**: arrays indexed by `size_key = min(total_size, K)` (default `K = 5`) for support / confidence / lift; missing keys default to 0.0 (no constraint).
+- optional **per-length thresholds**: arrays indexed by `size_key = total_size` (entry index `size_key - 1`) for support / confidence / lift; sizes beyond the array length default to 0.0 (no constraint). (Supersedes the original `min(total_size, K)` clamp with `K = 5` — see `design_docs/REMOVE_SIZE_KEY_CLAMP.md`.)
 
 **Parameter policy (guidance for callers).** To make antecedent length vary with support — shorter rules at low support, longer at high support — express it through the **per-length support thresholds** (set `supp_thr` high for large sizes, so long rules survive only on strong evidence), not by coupling `max_len` to `min_support_abs`. The per-length mechanism is smooth (no discontinuity when support crosses a boundary) and keeps the two knobs independent. A hard "if support < X then A = 3" rule, if wanted operationally, belongs in the consumer's configuration as a default policy table — never inside the library.
 
@@ -167,9 +167,9 @@ result = fpm.mine(
     min_support_abs,  # int           absolute support, in transactions
     max_len,          # int           itemset depth cap (e.g. A + 1)
     max_antecedents,  # int           rule antecedent-size cap A
-    supp_thr,         # float64[K]    per-length thresholds (K = 5)
-    conf_thr,         # float64[K]
-    lift_thr,         # float64[K]
+    supp_thr,         # float64[]     per-length thresholds (index = total_size - 1)
+    conf_thr,         # float64[]
+    lift_thr,         # float64[]
     min_confidence,   # float         global generation-time floor
     threads,          # int           0 = auto-detect (default); explicit value overrides
     k_witnesses,      # int           witnesses per rule (e.g. 5)

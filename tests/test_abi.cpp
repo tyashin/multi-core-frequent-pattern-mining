@@ -73,6 +73,19 @@ TEST(Abi, ThresholdArraysPassedThrough) {
     }
   }
   fpm_free_rules(r);
+
+  // Long arrays pass through (pointer + length, no length cap): slot 3 of a
+  // 7-slot array drops every size-3 rule while size-2 rules stay.
+  const std::vector<double> conf_thr7 = {0.0, 0.0, 0.999, 0.0, 0.0, 0.0, 0.0};
+  r = fpm_mine_rules(offsets.data(), offsets.size(), keys.data(), keys.size(), 2, 3, 2, nullptr, 0,
+                     conf_thr7.data(), conf_thr7.size(), nullptr, 0, 0.0, 1, 0);
+  ASSERT_NE(r, nullptr) << fpm_last_error();
+  EXPECT_GT(r->num_rules, 0u);
+  for (uint64_t i = 0; i < r->num_rules; ++i) {
+    const uint64_t ant_len = r->ant_offsets[i + 1] - r->ant_offsets[i];
+    EXPECT_EQ(ant_len, 1u);  // size-3 rules (ant_len 2) all have conf 2/3 < 0.999
+  }
+  fpm_free_rules(r);
 }
 
 }  // namespace

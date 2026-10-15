@@ -72,7 +72,7 @@ std::vector<OracleRule> oracle_rules(const ItemsetMap& sets, uint64_t n, int max
     if (z.size() < 2) continue;
     if (static_cast<int>(z.size()) - 1 > max_antecedents) continue;
     const uint64_t cnt_z = kv.second;
-    const int size_key = std::min<int>(static_cast<int>(z.size()), fpm::Thresholds::kSizeKeyMax);
+    const int size_key = static_cast<int>(z.size());
     const double supp = static_cast<double>(cnt_z) / static_cast<double>(n);
     if (supp < thr.supp_at(size_key)) continue;
     for (uint64_t c : z) {
@@ -227,7 +227,7 @@ TEST(Rules, SparkCompatMaxCombination) {
   fpm::RuleParams p;
   p.max_antecedents = 2;
   p.min_confidence = 0.5;
-  p.thr.conf = {0.0, 0.2, 0.8};  // size 2: 0.2 (< 0.5), size >= 3: 0.8 (> 0.5)
+  p.thr.conf = {0.0, 0.2, 0.8};  // size 2: 0.2 (< 0.5), size 3: 0.8 (> 0.5)
   expect_rules_eq(as_oracle_rules(run_rules(csr, minsup, max_len, p)),
                   oracle_rules(sets, 1500, 2, 0.5, p.thr));
 }
@@ -356,19 +356,22 @@ TEST(Rules, NBasketsMatchesItemsetCounts) {
   }
 }
 
-// size_key = min(total_size, 5): itemsets longer than 5 must be governed by
-// the LAST threshold entry. Verified by targeted presence/absence of rules
-// whose confidence/support is known exactly, not via the shared helper.
-TEST(Rules, SizeKeyClampAtFive) {
-  // 850 tx with {1,2,3,4,5}; 150 tx with {1,2,3,4,6}. N = 1000.
-  // count({1,2,3,4}) = 1000; count({1,2,3,4,5}) = 850; count({1,2,3,4,6}) = 150.
+// size_key = total_size (direct indexing, no clamp): which slot governs a
+// size-6 rule is proven by discriminating thresholds — each case flips the
+// outcome depending on whether slot 5 (the old clamped behavior) or slot 6
+// (direct indexing) is read. Verified by targeted presence/absence of rules
+// whose confidence/support/lift is known exactly, not via the shared helper.
+TEST(Rules, DirectSizeKeyIndexing) {
+  // 850 tx with {1,2,3,4,5,6}; 150 tx with {1,2,3,4,5,7}. N = 1000.
+  // count({1,2,3,4,5}) = 1000; count({1,2,3,4,5,6}) = 850; count({6}) = 850.
+  // Rule {1,2,3,4,5} -> {6}: |Z| = 6, conf = 0.85, supp = 0.85, lift = 1.0.
   std::vector<uint64_t> offsets{0}, keys;
   for (int i = 0; i < 850; ++i) {
-    for (uint64_t it : {1, 2, 3, 4, 5}) keys.push_back(it);
+    for (uint64_t it : {1, 2, 3, 4, 5, 6}) keys.push_back(it);
     offsets.push_back(keys.size());
   }
   for (int i = 0; i < 150; ++i) {
-    for (uint64_t it : {1, 2, 3, 4, 6}) keys.push_back(it);
+    for (uint64_t it : {1, 2, 3, 4, 5, 7}) keys.push_back(it);
     offsets.push_back(keys.size());
   }
   Csr csr{offsets, keys};
@@ -385,21 +388,76 @@ TEST(Rules, SizeKeyClampAtFive) {
   fpm::RuleParams p;
   p.max_antecedents = 6;
   p.min_confidence = 0.0;
-  p.thr.conf = {0.0, 0.0, 0.0, 0.0, 0.9};  // size_key 5 (i.e. |Z| >= 5): floor 0.9
 
-  auto rules = run_rules(csr, 1, 7, p);
-  // {1,2,3,4} -> {5}: conf = 850/1000 = 0.85, |Z| = 5 -> idx 4 -> dropped.
-  EXPECT_FALSE(has_rule(rules, {1, 2, 3, 4}, 5));
-  // {1,2,3} -> {5}: conf = 850/1000 = 0.85, |Z| = 4 -> idx 3 = 0 -> kept.
-  EXPECT_TRUE(has_rule(rules, {1, 2, 3}, 5));
+  // Confidence, both directions: slot 6 = 0.9 drops the rule; slot 5 = 0.9
+  // with slot 6 = 0 keeps it. The clamped code would invert both outcomes.
+  p.thr.conf = {0.0, 0.0, 0.0, 0.0, 0.0, 0.9};
+  EXPECT_FALSE(has_rule(run_rules(csr, 1, 6, p), {1, 2, 3, 4, 5}, 6));
+  p.thr.conf = {0.0, 0.0, 0.0, 0.0, 0.9, 0.0};
+  EXPECT_TRUE(has_rule(run_rules(csr, 1, 6, p), {1, 2, 3, 4, 5}, 6));
 
-  // Support clamp likewise: supp({1,2,3,4,5}) = 0.85; drop |Z| >= 5 via idx 4.
+  // Support, both directions (supp 0.85 vs threshold 0.86).
   p.thr.conf = {};
-  p.thr.supp = {0.0, 0.0, 0.0, 0.0, 0.86};
-  rules = run_rules(csr, 1, 7, p);
-  EXPECT_FALSE(has_rule(rules, {1, 2, 3, 4}, 5));  // supp 0.85 < 0.86, |Z| = 5
-  EXPECT_TRUE(has_rule(rules, {1, 2, 3}, 5));      // |Z| = 4 -> unconstrained
-  EXPECT_FALSE(has_rule(rules, {1, 2, 3, 4}, 6));  // supp 0.15 < 0.86, |Z| = 5
+  p.thr.supp = {0.0, 0.0, 0.0, 0.0, 0.0, 0.86};
+  EXPECT_FALSE(has_rule(run_rules(csr, 1, 6, p), {1, 2, 3, 4, 5}, 6));
+  p.thr.supp = {0.0, 0.0, 0.0, 0.0, 0.86, 0.0};
+  EXPECT_TRUE(has_rule(run_rules(csr, 1, 6, p), {1, 2, 3, 4, 5}, 6));
+
+  // Lift, both directions (lift 1.0 vs threshold 1.1).
+  p.thr.supp = {};
+  p.thr.lift = {0.0, 0.0, 0.0, 0.0, 0.0, 1.1};
+  EXPECT_FALSE(has_rule(run_rules(csr, 1, 6, p), {1, 2, 3, 4, 5}, 6));
+  p.thr.lift = {0.0, 0.0, 0.0, 0.0, 1.1, 0.0};
+  EXPECT_TRUE(has_rule(run_rules(csr, 1, 6, p), {1, 2, 3, 4, 5}, 6));
+}
+
+// Sizes beyond the array length are unconstrained: with a 5-slot array the
+// size-6 rule survives slot5 = 0.9, while a size-5 rule with the same 0.85
+// confidence is still governed by slot 5 and dropped.
+TEST(Rules, BeyondThresholdArrayMeansNoConstraint) {
+  // Same handcrafted dataset as DirectSizeKeyIndexing.
+  std::vector<uint64_t> offsets{0}, keys;
+  for (int i = 0; i < 850; ++i) {
+    for (uint64_t it : {1, 2, 3, 4, 5, 6}) keys.push_back(it);
+    offsets.push_back(keys.size());
+  }
+  for (int i = 0; i < 150; ++i) {
+    for (uint64_t it : {1, 2, 3, 4, 5, 7}) keys.push_back(it);
+    offsets.push_back(keys.size());
+  }
+  Csr csr{offsets, keys};
+
+  auto has_rule = [](const fpm::Rules& r, std::set<uint64_t> ant, uint64_t cons) {
+    for (size_t i = 0; i < r.size(); ++i) {
+      std::set<uint64_t> got(r.ant_keys.begin() + r.ant_offsets[i],
+                             r.ant_keys.begin() + r.ant_offsets[i + 1]);
+      if (got == ant && r.consequent[i] == cons) return true;
+    }
+    return false;
+  };
+
+  fpm::RuleParams p;
+  p.max_antecedents = 6;
+  p.min_confidence = 0.0;
+  p.thr.conf = {0.0, 0.0, 0.0, 0.0, 0.9};  // 5 slots; size 6 is past the end
+
+  auto rules = run_rules(csr, 1, 6, p);
+  // {1,2,3,4,5} -> {6}: |Z| = 6, conf 0.85, beyond the array -> kept.
+  EXPECT_TRUE(has_rule(rules, {1, 2, 3, 4, 5}, 6));
+  // {1,2,3,4} -> {6}: |Z| = 5, conf 850/1000 = 0.85 < 0.9 -> slot 5 drops it.
+  EXPECT_FALSE(has_rule(rules, {1, 2, 3, 4}, 6));
+}
+
+// Unit-level: direct checks on the public Thresholds accessors.
+TEST(Rules, ThresholdsAccessorIndexing) {
+  fpm::Thresholds thr;
+  thr.conf = {0.0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6};  // 7 slots
+  EXPECT_DOUBLE_EQ(thr.conf_at(7), 0.6);           // index = size_key - 1
+  EXPECT_DOUBLE_EQ(thr.conf_at(1), 0.0);           // slot 1: no size-1 rules exist
+  EXPECT_DOUBLE_EQ(thr.conf_at(0), 0.0);           // non-positive -> no constraint
+  thr.conf = {0.0, 0.0, 0.0, 0.0, 0.9};            // 5 slots
+  EXPECT_DOUBLE_EQ(thr.conf_at(5), 0.9);
+  EXPECT_DOUBLE_EQ(thr.conf_at(7), 0.0);           // past the end -> no constraint
 }
 
 }  // namespace

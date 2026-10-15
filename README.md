@@ -58,8 +58,9 @@ Notes:
   (results stay correct if you don't; it's just wasted work).
 - Fractional support: resolve to an absolute count before the call
   (Spark-compatible: `ceil(fraction * N)`).
-- **Per-length thresholds**: arrays indexed by `size_key = min(total_size, 5)`,
-  entry index `size_key - 1`; missing entries mean no constraint. Effective
+- **Per-length thresholds**: arrays indexed by `size_key = total_size`,
+  entry index `size_key - 1`; sizes beyond the array length are
+  unconstrained (missing entries read as 0.0). Effective
   confidence floor per rule is `max(min_confidence, conf_thr[size_key])`
   (Spark-compatible generation-time semantics). To make antecedent length vary
   with support, express it through `supp_thr` (high thresholds for large
@@ -113,20 +114,20 @@ vs **mlxtend 0.25.0** `fpgrowth` (single-threaded; one-hot prep excluded):
 
 | dataset | itemsets | fpm | mlxtend | speedup |
 |---|---|---:|---:|---:|
-| accidents, minsup 0.2 | 889,883 | 2.29 s | 45.8 s | 20x |
-| accidents, minsup 0.1 | 10,691,549 | 27.1 s | 383.5 s | 14x |
-| retail, minsup 0.01 | 159 | 20.2 ms | 1.59 s | 79x |
-| retail, minsup 0.005 | 580 | 52.5 ms | 1.80 s | 34x |
-| kosarak, minsup 0.05–0.01 | 33–383 | 77–94 ms | intractable¹ | — |
+| accidents, minsup 0.2 | 889,883 | 2.28 s | 45.7 s | 20x |
+| accidents, minsup 0.1 | 10,691,549 | 27.1 s | 331.7 s | 12x |
+| retail, minsup 0.01 | 159 | 19.4 ms | 1.56 s | 80x |
+| retail, minsup 0.005 | 580 | 23.2 ms | 1.77 s | 76x |
+| kosarak, minsup 0.05–0.01 | 33–383 | 70–245 ms | intractable¹ | — |
 
 vs **PySpark 4.2** `FPGrowth`, `local[*]` (compute only — JVM startup ~4–12 s
 and Python→Spark ingest 5–26 s excluded):
 
 | dataset | phase | fpm | Spark | speedup |
 |---|---|---:|---:|---:|
-| retail, minsup 0.01, conf 0.2 | itemsets / full pipeline | 12.9 / 12.5 ms | 2.7 / 3.4 s | 211x / 271x |
-| kosarak, minsup 0.05, conf 0.5, cap 5 | itemsets / full pipeline | 133 / 122 ms | 6.1 / 6.4 s | 46x / 52x |
-| accidents, minsup 0.2, conf 0.5 | itemsets / full pipeline | 2.5 / 3.9 s | 80.2 / 129.6 s | 32x / 33x |
+| retail, minsup 0.01, conf 0.2 | itemsets / full pipeline | 12.8 / 12.1 ms | 2.6 / 3.1 s | 200x / 249x |
+| kosarak, minsup 0.05, conf 0.5, cap 5 | itemsets / full pipeline | 67 / 66 ms | 5.1 / 5.4 s | 76x / 82x |
+| accidents, minsup 0.2, conf 0.5 | itemsets / full pipeline | 2.3 / 3.5 s | 84.4 / 130.4 s | 37x / 37x |
 
 ¹ mlxtend's dense one-hot encoding is intractable at 990k × 41k items.
 Spark needed a 12 GB driver heap to complete accidents@0.2 (OOM with the
@@ -149,10 +150,10 @@ fpm on accidents@0.1:
 | max_len | itemsets | fpm time |
 |---|---:|---:|
 | uncapped | 10,691,549 | 27.1 s |
-| 5 (A=4) | 292,566 | 0.66 s |
-| 3 (A=2) | 12,858 | 0.085 s |
+| 5 (A=4) | 292,566 | 0.68 s |
+| 3 (A=2) | 12,858 | 0.084 s |
 
-mlxtend with the same cap (`max_len=5`, exact parity): 112.1 s — **171x**;
+mlxtend with the same cap (`max_len=5`, exact parity): 112.5 s — **167x**;
 the cap buys mlxtend only 3.4x because its FP-tree recursion still walks the
 full tree. Spark MLlib has no depth cap at all.
 

@@ -35,7 +35,7 @@ def reference_rules(txs, minsup, max_len, max_antecedents, min_confidence,
             cz = count(z)
             if cz < minsup or len(z) - 1 > max_antecedents:
                 continue
-            size_key = min(len(z), 5) - 1
+            size_key = len(z) - 1
             supp = cz / n
             if supp_thr and size_key < len(supp_thr) and supp < supp_thr[size_key]:
                 continue
@@ -134,6 +134,33 @@ def test_per_length_thresholds():
     assert got.keys() == exp.keys()
 
 
+def test_size_key_direct_indexing():
+    """Threshold slot = total_size - 1, no clamp: a size-6 rule is governed by
+    slot 6, not slot 5; sizes past the array length are unconstrained."""
+    # 850 tx {1,2,3,4,5,6} + 150 tx {1,2,3,4,5,7}; N = 1000.
+    # {1,2,3,4,5} -> {6}: |Z| = 6, conf 0.85. {1,2,3,4} -> {6}: |Z| = 5, conf 0.85.
+    txs = [[1, 2, 3, 4, 5, 6]] * 850 + [[1, 2, 3, 4, 5, 7]] * 150
+    offsets, keys = csr_from_transactions(txs)
+    base = dict(min_support_abs=1, max_len=6, max_antecedents=6, min_confidence=0.0)
+
+    # Slot 6 = 0.9 drops the size-6 rule (the old clamp would keep it via slot 5).
+    conf_thr = np.array([0.0, 0.0, 0.0, 0.0, 0.0, 0.9])
+    r = rules_as_dict(fpm.mine(offsets, keys, conf_thr=conf_thr, **base))
+    assert (frozenset({1, 2, 3, 4, 5}), 6) not in r
+
+    # Slot 5 = 0.9 with slot 6 = 0 keeps it (the old clamp would drop it)...
+    conf_thr = np.array([0.0, 0.0, 0.0, 0.0, 0.9, 0.0])
+    r = rules_as_dict(fpm.mine(offsets, keys, conf_thr=conf_thr, **base))
+    assert (frozenset({1, 2, 3, 4, 5}), 6) in r
+    # ...while slot 5 still governs size-5 rules.
+    assert (frozenset({1, 2, 3, 4}), 6) not in r
+
+    # A 5-slot array leaves size-6 rules unconstrained.
+    conf_thr = np.array([0.0, 0.0, 0.0, 0.0, 0.9])
+    r = rules_as_dict(fpm.mine(offsets, keys, conf_thr=conf_thr, **base))
+    assert (frozenset({1, 2, 3, 4, 5}), 6) in r
+
+
 def test_threads_determinism():
     rng = np.random.default_rng(31)
     txs = random_transactions(rng, 2000, 20, 0.1, 0.03, 6)
@@ -164,9 +191,6 @@ def test_invalid_inputs():
     with pytest.raises(ValueError):  # offsets[N] != len(keys)
         fpm.mine(offsets, np.array([1], dtype=np.uint64), min_support_abs=1, max_len=2,
                  max_antecedents=1)
-    with pytest.raises(ValueError):  # threshold array too long
-        fpm.mine(offsets, keys, min_support_abs=1, max_len=2, max_antecedents=1,
-                 conf_thr=np.zeros(6))
     with pytest.raises(TypeError):  # wrong dtype (float keys)
         fpm.mine(offsets, keys.astype(np.float64), min_support_abs=1, max_len=2,
                  max_antecedents=1)

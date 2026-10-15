@@ -11,11 +11,10 @@
 
 namespace fpm {
 
-// Per-length thresholds indexed by size_key = min(total_size, kSizeKeyMax),
-// where total_size = |antecedent| + 1 = |Z|. Entry index = size_key - 1;
+// Per-length thresholds indexed by size_key = total_size, where
+// total_size = |antecedent| + 1 = |Z|. Entry index = size_key - 1;
 // entries missing from the array mean 0.0 (no constraint).
 struct Thresholds {
-  static constexpr int kSizeKeyMax = 5;
   std::vector<double> supp;  // fraction in [0, 1]
   std::vector<double> conf;  // fraction in [0, 1]
   std::vector<double> lift;  // >= 0
